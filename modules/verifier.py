@@ -5,6 +5,12 @@ import time
 def verify_excel(file):
     try:
         df = pd.read_excel(file, sheet_name='Sheet1')
+    except ValueError:
+    # Load the first available sheet if 'Sheet1' not found
+        sheet_names = pd.ExcelFile(file).sheet_names
+        df = pd.read_excel(file, sheet_name=sheet_names[0])
+
+    try:
         df['Test Script ID'] = df['Test Script ID'].ffill()
         
         invalid_scripts = []
