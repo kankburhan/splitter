@@ -18,7 +18,7 @@ def set_page_config():
 
 def main():
     try:
-        et_page_config()
+        set_page_config()
         menu = ["Home", "Splitter", "Verifier"]
         choice = st.sidebar.selectbox("Main Menu", menu)
     
