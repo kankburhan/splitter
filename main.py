@@ -17,16 +17,19 @@ def set_page_config():
     st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 def main():
-    set_page_config()
-    menu = ["Home", "Splitter", "Verifier"]
-    choice = st.sidebar.selectbox("Main Menu", menu)
-
-    if choice == "Home":
-        render_home_page()
-    elif choice == "Splitter":
-        render_splitter()
-    elif choice == "Verifier":
-        render_verifier()
+    try:
+        et_page_config()
+        menu = ["Home", "Splitter", "Verifier"]
+        choice = st.sidebar.selectbox("Main Menu", menu)
+    
+        if choice == "Home":
+            render_home_page()
+        elif choice == "Splitter":
+            render_splitter()
+        elif choice == "Verifier":
+            render_verifier()
+    except Exception:
+        print("temporary down")
 
 if __name__ == "__main__":
     main()
