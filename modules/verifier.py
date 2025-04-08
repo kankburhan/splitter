@@ -11,13 +11,13 @@ def verify_excel(file):
         df = pd.read_excel(file, sheet_name=sheet_names[0])
 
     try:
-        df['Test Script ID'] = df['Test Script ID'].ffill()
+        df['TEST SCRIPT NUMBER'] = df['TEST SCRIPT NUMBER'].ffill()
         
         invalid_scripts = []
         
-        for script_id, group in df.groupby('Test Script ID'):
-            test_steps = group['Test Step'].count()
-            expected_results = group['Expected Result'].count()
+        for script_id, group in df.groupby('TEST SCRIPT NUMBER'):
+            test_steps = group['Execution_Sequence'].count()
+            expected_results = group['Expected_Result'].count()
             
             if test_steps != expected_results:
                 invalid_scripts.append({
@@ -38,6 +38,10 @@ def verify_excel(file):
 def render_verifier():
     st.title('📊 Multi-File Test Script Verifier')
     st.caption("Developed with Streamlit 🚀")
+    footer_html = """<div style='text-align: center;'>
+      <p>Developed with 🔥 by Puti Andini</p>
+    </div>"""
+    st.markdown(footer_html, unsafe_allow_html=True)
 
     uploaded_files = st.file_uploader(
         "Upload Excel files (multiple allowed)",
@@ -113,3 +117,4 @@ def render_verifier():
 
             st.markdown("---")
             st.caption(f"Validation completed at: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+            

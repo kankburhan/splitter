@@ -2,13 +2,14 @@ import streamlit as st
 import pandas as pd
 import io
 import zipfile
+import re
 
-def funding_transform(df):
+def funding_transform(df, epic_link='', feature='', squad='', priority='High'):
     df = df.dropna(how='all').dropna(axis=1, how='all').reset_index(drop=True)
     
-    # Set proper headers
+    # Set proper headers and drop unnecessary rows in one step
     df.columns = df.iloc[1]
-    df = df[2:].reset_index(drop=True)
+    df = df.iloc[2:].reset_index(drop=True)
     
     # Rename relevant columns
     df.rename(columns={
@@ -26,95 +27,59 @@ def funding_transform(df):
         'GENERAL INFORMATION / SUMMARY OF THE TEST SCRIPT',
         'PRE-REQUISITES',
         'Execution_Sequence',
-        "MODULE\nPut in Defect",
         'Expected_Result',
         'Product / Akad',
-        'Assigned Tester',
-        'Executed By',
-        'PASS OR FAIL',
-        'ACTUAL RESULT'
+        'Feature',
+        'Assigned Tester'
     ]
-    df_selected = df[columns_to_keep]
+    df = df[columns_to_keep]
     
-    # Function to align lists
+    # Align lists using vectorized operations
     def align_lists(row):
-        exec_seq = row['Execution_Sequence']
-        exp_res = row['Expected_Result']
-
-        exec_seq = exec_seq.split('\n') if isinstance(exec_seq, str) else []
-        exp_res = exp_res.split('\n') if isinstance(exp_res, str) else []
-
+        exec_seq = re.split(r'\n(?=\d+\.\s*)', row['Execution_Sequence']) if isinstance(row['Execution_Sequence'], str) else []
+        exp_res = re.split(r'\n(?=\d+\.\s*)', row['Expected_Result']) if isinstance(row['Expected_Result'], str) else []
         max_len = max(len(exec_seq), len(exp_res))
         exec_seq.extend([''] * (max_len - len(exec_seq)))
         exp_res.extend([''] * (max_len - len(exp_res)))
-
-        return list(zip(exec_seq, exp_res))
+        return pd.DataFrame({'Execution_Sequence': exec_seq, 'Expected_Result': exp_res})
     
-    df_selected['Aligned'] = df_selected.apply(align_lists, axis=1)
-    df_exploded = df_selected.explode('Aligned', ignore_index=True)
-    df_exploded[['Execution_Sequence', 'Expected_Result']] = pd.DataFrame(
-        df_exploded['Aligned'].tolist(), 
-        index=df_exploded.index
-    )
-    df_exploded.drop(columns=['Aligned'], inplace=True)
+    exploded_dfs = []
+    for _, row in df.iterrows():
+        aligned_df = align_lists(row)
+        aligned_df = aligned_df.assign(**{col: row[col] for col in df.columns if col not in ['Execution_Sequence', 'Expected_Result']})
+        exploded_dfs.append(aligned_df)
     
-    # Create new DataFrame with desired structure
-    desired_columns = {
-        'NO.': df_exploded['NO.'],
-        'Test Script ID': df_exploded['TEST SCRIPT NUMBER'],
-        'Skenario': df_exploded['TEST SCRIPT DESCRIPTION/SCENARIO'],
-        'Test Object Name': df_exploded['TEST OBJECT NAME'],
-        'Scenario Type': df_exploded['Scenario Type'],
-        'Summary': df_exploded['GENERAL INFORMATION / SUMMARY OF THE TEST SCRIPT'],
-        'Prerequisite': df_exploded['PRE-REQUISITES'],
-        'Test Step': df_exploded['Execution_Sequence'],
-        'Module': df_exploded["MODULE\nPut in Defect"],
-        'Expected Result': df_exploded['Expected_Result'],
-        'Product Code_Product Name': df_exploded['Product / Akad'],
-        'Assignee': df_exploded['Assigned Tester'],
-        'Executed By': df_exploded['Executed By'],
-        'Status': df_exploded['PASS OR FAIL'],
-        'Actual Result': df_exploded['ACTUAL RESULT']
-    }
+    df_exploded = pd.concat(exploded_dfs, ignore_index=True)
     
-    df_new = pd.DataFrame(desired_columns)
+    # Add additional columns directly
+    df_exploded['Test Envi'] = 'SIT'
+    df_exploded['Test Phase'] = 'SIT1'
+    df_exploded['epic link'] = epic_link
+    df_exploded['summary'] = df_exploded['TEST SCRIPT NUMBER'] + '_' + df_exploded['GENERAL INFORMATION / SUMMARY OF THE TEST SCRIPT']
+    df_exploded['feature'] = feature
+    df_exploded['squad'] = squad
+    df_exploded['Priority'] = priority
     
-    # Define columns to clear for duplicates
+    # Group by "TEST SCRIPT NUMBER" and assign "NO." starting from 0 for each group
+    df_exploded['NO.'] = df_exploded.groupby('TEST SCRIPT NUMBER').ngroup()
+    df_exploded['TEST SCRIPT NUMBER'] = df_exploded['TEST SCRIPT NUMBER'].ffill()
+    
+    # Clear duplicate values for specific columns
     cols_to_clear = [
-        'Skenario',
-        'Scenario Type', 
-        'Test Script ID', 
-        'Summary', 
-        'Prerequisite', 
-        'Test Object Name', 
-        'Module',
-        'Product Code_Product Name',
-        'Assignee',
-        'Executed By',
-        'Status',
-        'Actual Result'
+        'TEST SCRIPT NUMBER',
     ]
-    
-    # Clear duplicate values
-    df_new.loc[df_new.duplicated(subset=['Test Script ID']), cols_to_clear] = ''
-    
-    return df_new
+    df_exploded.loc[df_exploded.duplicated(subset=['TEST SCRIPT NUMBER']), cols_to_clear] = ''
 
-def financing_transform(df):
-    df = df.dropna(how='all').dropna(axis=1, how='all').reset_index(drop=True)
+    # Fill specific columns only in the first row of each TEST SCRIPT NUMBER
+    cols_to_fill_first_row = [
+    ]
+    for col in cols_to_fill_first_row:
+        df_exploded[col] = df_exploded.groupby('TEST SCRIPT NUMBER')[col].transform(
+            lambda x: [x.iloc[0]] + [''] * (len(x) - 1)
+        )
     
-    # Set proper headers
-    df.columns = df.iloc[1]
-    df = df[2:].reset_index(drop=True)
-    
-    # Rename relevant columns
-    df.rename(columns={
-        'EXECUTION SEQUENCE': 'Execution_Sequence',
-        'EXPECTED RESULT': 'Expected_Result'
-    }, inplace=True)
-    
-    # Select necessary columns
-    columns_to_keep = [
+    # Reorder columns to match the specified ordering
+    final_columns = [
         'NO.', 
         'TEST SCRIPT NUMBER',
         'TEST SCRIPT DESCRIPTION/SCENARIO',
@@ -123,88 +88,24 @@ def financing_transform(df):
         'GENERAL INFORMATION / SUMMARY OF THE TEST SCRIPT',
         'PRE-REQUISITES',
         'Execution_Sequence',
-        "MODULE\nPut in Defect",
         'Expected_Result',
         'Product / Akad',
         'Feature',
-        'Akad',
         'Assigned Tester',
-        'Executed By',
-        'PASS OR FAIL',
-        'ACTUAL RESULT'
+        'Test Envi',
+        'Test Phase',
+        'epic link',
+        'summary',
+        'feature',
+        'squad',
+        'Priority'
     ]
-    df_selected = df[columns_to_keep]
-    
-    # Function to align lists
-    def align_lists(row):
-        exec_seq = row['Execution_Sequence']
-        exp_res = row['Expected_Result']
+    return df_exploded[final_columns]
 
-        exec_seq = exec_seq.split('\n') if isinstance(exec_seq, str) else []
-        exp_res = exp_res.split('\n') if isinstance(exp_res, str) else []
+def financing_transform(df, epic_link='', feature='', squad='', priority='High'):
+    return funding_transform(df, epic_link, feature, squad, priority)
 
-        max_len = max(len(exec_seq), len(exp_res))
-        exec_seq.extend([''] * (max_len - len(exec_seq)))
-        exp_res.extend([''] * (max_len - len(exp_res)))
-
-        return list(zip(exec_seq, exp_res))
-    
-    df_selected['Aligned'] = df_selected.apply(align_lists, axis=1)
-    df_exploded = df_selected.explode('Aligned', ignore_index=True)
-    df_exploded[['Execution_Sequence', 'Expected_Result']] = pd.DataFrame(
-        df_exploded['Aligned'].tolist(), 
-        index=df_exploded.index
-    )
-    df_exploded.drop(columns=['Aligned'], inplace=True)
-    
-    # Create new DataFrame with desired structure
-    desired_columns = {
-        'NO.': df_exploded['NO.'],
-        'Test Script ID': df_exploded['TEST SCRIPT NUMBER'],
-        'Skenario': df_exploded['TEST SCRIPT DESCRIPTION/SCENARIO'],
-        'Test Object Name': df_exploded['TEST OBJECT NAME'],
-        'Scenario Type': df_exploded['Scenario Type'],
-        'Summary': df_exploded['GENERAL INFORMATION / SUMMARY OF THE TEST SCRIPT'],
-        'Prerequisite': df_exploded['PRE-REQUISITES'],
-        'Test Step': df_exploded['Execution_Sequence'],
-        'Module': df_exploded["MODULE\nPut in Defect"],
-        'Expected Result': df_exploded['Expected_Result'],
-        'Product Code_Product Name': df_exploded['Product / Akad'],
-        'Feature': df_exploded['Feature'],
-        'Akad': df_exploded['Akad'],
-        'Assignee': df_exploded['Assigned Tester'],
-        'Executed By': df_exploded['Executed By'],
-        'Status': df_exploded['PASS OR FAIL'],
-        'Actual Result': df_exploded['ACTUAL RESULT']
-    }
-    
-    df_new = pd.DataFrame(desired_columns)
-    
-    # Define columns to clear for duplicates
-    cols_to_clear = [
-        'Skenario',
-        'Scenario Type', 
-        'Test Script ID', 
-        'Summary', 
-        'Prerequisite', 
-        'Test Object Name', 
-        'Module',
-        'Product Code_Product Name',
-        'Feature',
-        'Akad',
-        'Assignee',
-        'Executed By',
-        'Status',
-        'Actual Result'
-    ]
-    
-    # Clear duplicate values
-    df_new.loc[df_new.duplicated(subset=['Test Script ID']), cols_to_clear] = ''
-    
-    return df_new
-
-
-def process_sheet(input_file, sheet_name):
+def process_sheet(input_file, sheet_name, epic_link, feature, squad, priority):
     # Load the Excel file
     xls = pd.ExcelFile(input_file)
     df = xls.parse(sheet_name=sheet_name)
@@ -212,18 +113,36 @@ def process_sheet(input_file, sheet_name):
     # Drop empty rows and columns
     filename_lower = input_file.name.lower()
     if '[funding]' in filename_lower or '[t24]' in filename_lower:
-        df = funding_transform(df)
+        df = funding_transform(df, epic_link, feature, squad, priority)
     elif '[financing]' in filename_lower:
-        df = financing_transform(df)
+        df = financing_transform(df, epic_link, feature, squad, priority)
     else:
-        st.error("File name must contain [FUNDING], [FINANCING], or [T24]")
-        return None
+         df = funding_transform(df, epic_link, feature, squad, priority)
     
     return df
 
 def render_splitter():
     st.title("📊 Excel Processing Tool")
 
+    # Add new form fields
+    epic_link = st.text_input("Epic Link", help="Enter the epic link")
+    feature = st.text_input("Feature", help="Enter the feature name")
+    squad = st.selectbox(
+        "Squad",
+        [
+            "",
+            "Customer", 
+            "Funding", 
+            "Branch Transaction", 
+            "Financing Retail", 
+            "Financing Corporate", 
+            "Micro", 
+            "Gadai", 
+            "Head Office Transaction", 
+            "Accounting"
+        ],
+        help="Select the squad"
+    )
     # File Upload Section
     uploaded_file = st.file_uploader("Upload your Excel file", type=["xlsx"], 
                                    help="Please upload an Excel file in XLSX format")
@@ -250,6 +169,10 @@ def render_splitter():
 
         # Processing Section
         if st.button("🚀 Start Processing"):
+            # if not feature.strip():
+            #     st.error("Feature field is mandatory. Please enter a value.")
+            #     st.stop()
+
             if not selected_sheets:
                 st.error("Please select at least one worksheet.")
                 st.stop()
@@ -268,7 +191,7 @@ def render_splitter():
                     progress = 10 + int((i / total_sheets) * 70)
                     progress_bar.progress(progress)
                     
-                    df = process_sheet(uploaded_file, sheet_name)
+                    df = process_sheet(uploaded_file, sheet_name, epic_link, feature, squad, 'High')
                     if df is not None:
                         processed_data.append((sheet_name, df))
                 
@@ -329,26 +252,31 @@ def render_splitter():
                             mime="text/csv",
                         )
 
-                else:  # Multiple Files (per sheet per file)
-                    zip_buffer = io.BytesIO()
-                    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-                        for sheet_name, df in processed_data:
-                            if download_format == "XLSX":
-                                excel_buffer = io.BytesIO()
-                                with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
-                                    df.to_excel(writer, index=False, sheet_name='Sheet1')
-                                zip_file.writestr(f"{sheet_name}.xlsx", excel_buffer.getvalue())
-                            else:
-                                csv_buffer = io.StringIO()
-                                df.to_csv(csv_buffer, index=False)
-                                zip_file.writestr(f"{sheet_name}.csv", csv_buffer.getvalue())
-                    zip_buffer.seek(0)
-                    st.download_button(
-                        label="⬇️ Download ZIP File",
-                        data=zip_buffer,
-                        file_name="processed_files.zip",
-                        mime="application/zip",
-                    )
+                elif output_format == "Multiple Files (per sheet per file)":
+                    try:
+                        zip_buffer = io.BytesIO()
+                        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                            for sheet_name, df in processed_data:
+                                if download_format == "XLSX":
+                                    excel_buffer = io.BytesIO()
+                                    with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
+                                        df.to_excel(writer, index=False, sheet_name='Sheet1')
+                                    zip_file.writestr(f"{sheet_name}.xlsx", excel_buffer.getvalue())
+                                else:
+                                    csv_buffer = io.StringIO()
+                                    df.to_csv(csv_buffer, index=False)
+                                    zip_file.writestr(f"{sheet_name}.csv", csv_buffer.getvalue())
+                        zip_buffer.seek(0)
+                        st.success("✅ Processing completed successfully!")
+                        st.download_button(
+                            label="⬇️ Download ZIP File",
+                            data=zip_buffer,
+                            file_name="processed_files.zip",
+                            mime="application/zip",
+                        )
+                    except Exception as e:
+                        st.error(f"❌ Error during ZIP creation: {str(e)}")
+                        st.exception(e)
 
                 progress_bar.progress(100)
                 st.balloons()
