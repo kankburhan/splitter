@@ -7,9 +7,34 @@ import re
 def funding_transform(df, epic_link='', feature='', squad='', priority='High'):
     df = df.dropna(how='all').dropna(axis=1, how='all').reset_index(drop=True)
     
-    # Set proper headers and drop unnecessary rows in one step
-    df.columns = df.iloc[1]
-    df = df.iloc[2:].reset_index(drop=True)
+    # Dynamically find the row containing the desired column headers
+    required_columns = {
+        'NO.', 
+        'TEST SCRIPT NUMBER',
+        'TEST SCRIPT DESCRIPTION/SCENARIO',
+        'TEST OBJECT NAME',
+        'Scenario Type',
+        'GENERAL INFORMATION / SUMMARY OF THE TEST SCRIPT',
+        'PRE-REQUISITES',
+        'Execution_Sequence',
+        'Expected_Result',
+        'Product / Akad',
+        'Feature',
+        'Assigned Tester'
+    }
+    header_row_index = None
+    for i, row in df.iterrows():
+        row_set = set(row.dropna().astype(str))  # Drop NaN and convert to strings
+        if len(required_columns.intersection(row_set)) >= len(required_columns) * 0.6:  # Match at least 60% of required columns
+            header_row_index = i
+            break
+    
+    if header_row_index is None:
+        raise ValueError("Could not find the header row with the required columns.")
+    
+    # Set proper headers and drop unnecessary rows
+    df.columns = df.iloc[header_row_index]
+    df = df.iloc[header_row_index + 1:].reset_index(drop=True)
     
     # Rename relevant columns
     df.rename(columns={
@@ -32,7 +57,7 @@ def funding_transform(df, epic_link='', feature='', squad='', priority='High'):
         'Feature',
         'Assigned Tester'
     ]
-    df = df[columns_to_keep]
+    df = df[[col for col in columns_to_keep if col in df.columns]]  # Keep only available columns
     
     # Align lists using vectorized operations
     def align_lists(row):
