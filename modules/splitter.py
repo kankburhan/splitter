@@ -161,6 +161,7 @@ def render_splitter():
             "Branch Transaction", 
             "Financing Retail", 
             "Financing Corporate", 
+            "Financing-After DIsbursement",
             "Micro", 
             "Gadai", 
             "Head Office Transaction", 
@@ -169,10 +170,14 @@ def render_splitter():
         help="Select the squad"
     )
     # File Upload Section
-    uploaded_file = st.file_uploader("Upload your Excel file", type=["xlsx"], 
-                                   help="Please upload an Excel file in XLSX format")
+    uploaded_files = st.file_uploader(
+        "Upload your Excel file(s)", 
+        type=["xlsx"], 
+        accept_multiple_files=True,
+        help="Please upload one or more Excel files in XLSX format"
+    )
 
-    if uploaded_file:
+    if uploaded_files:
         # Sheet Selection
         try:
             output_format = st.radio(
@@ -184,22 +189,24 @@ def render_splitter():
                 ["XLSX", "CSV"],
                 key="file_format"
             )
-            xls = pd.ExcelFile(uploaded_file)
-            sheet_names = xls.sheet_names
-            selected_sheets = st.multiselect("Select worksheets", sheet_names)
-            output_format = output_format
+            
+            all_sheet_names = {}
+            for uploaded_file in uploaded_files:
+                xls = pd.ExcelFile(uploaded_file)
+                all_sheet_names[uploaded_file.name] = xls.sheet_names
+            
+            selected_sheets = {}
+            for file_name, sheet_names in all_sheet_names.items():
+                selected_sheets[file_name] = st.multiselect(f"Select worksheets for {file_name}", sheet_names)
+            
         except Exception as e:
-            st.error(f"Error reading file: {str(e)}")
+            st.error(f"Error reading files: {str(e)}")
             st.stop()
 
         # Processing Section
         if st.button("🚀 Start Processing"):
-            # if not feature.strip():
-            #     st.error("Feature field is mandatory. Please enter a value.")
-            #     st.stop()
-
-            if not selected_sheets:
-                st.error("Please select at least one worksheet.")
+            if not any(selected_sheets.values()):
+                st.error("Please select at least one worksheet from the uploaded files.")
                 st.stop()
             
             progress_bar = st.progress(0)
@@ -210,15 +217,21 @@ def render_splitter():
                 progress_bar.progress(10)
                 
                 processed_data = []
-                total_sheets = len(selected_sheets)
-                for i, sheet_name in enumerate(selected_sheets):
-                    status_message.info(f"Processing sheet {i+1}/{total_sheets}: {sheet_name}...")
-                    progress = 10 + int((i / total_sheets) * 70)
-                    progress_bar.progress(progress)
-                    
-                    df = process_sheet(uploaded_file, sheet_name, epic_link, feature, squad, 'High')
-                    if df is not None:
-                        processed_data.append((sheet_name, df))
+                total_sheets = sum(len(sheets) for sheets in selected_sheets.values())
+                processed_count = 0
+                
+                for file_name, sheets in selected_sheets.items():
+                    for sheet_name in sheets:
+                        status_message.info(f"Processing sheet {processed_count + 1}/{total_sheets}: {sheet_name} from {file_name}...")
+                        progress = 10 + int((processed_count / total_sheets) * 70)
+                        progress_bar.progress(progress)
+                        
+                        uploaded_file = next(f for f in uploaded_files if f.name == file_name)
+                        df = process_sheet(uploaded_file, sheet_name, epic_link, feature, squad, 'High')
+                        if df is not None:
+                            processed_data.append((sheet_name, df))  # Keep only the sheet name
+                        
+                        processed_count += 1
                 
                 status_message.info("Finalizing output...")
                 progress_bar.progress(90)
@@ -285,7 +298,7 @@ def render_splitter():
                                 if download_format == "XLSX":
                                     excel_buffer = io.BytesIO()
                                     with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
-                                        df.to_excel(writer, index=False, sheet_name='Sheet1')
+                                        df.to_excel(writer, index=False, sheet_name=sheet_name[:31])  # Preserve sheet name
                                     zip_file.writestr(f"{sheet_name}.xlsx", excel_buffer.getvalue())
                                 else:
                                     csv_buffer = io.StringIO()
@@ -314,9 +327,9 @@ def render_splitter():
     st.markdown("---")
     st.markdown("### Instructions")
     st.markdown("""
-    1. Upload your Excel file using the uploader above
-    2. Select the worksheets you want to process
-    3. Choose output format (single file with multiple sheets or multiple files)
+    1. Upload one or more Excel files using the uploader above
+    2. Select the worksheets you want to process from each file
+    3. Choose output format (single file with multiple sheets, multiple files, or one combined sheet)
     4. Click the 'Start Processing' button
     5. Download your processed file(s) when ready
     """)
