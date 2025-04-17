@@ -84,6 +84,7 @@ def funding_transform(df, epic_link='', feature='', squad='', priority='High'):
     df_exploded['feature'] = feature
     df_exploded['squad'] = squad
     df_exploded['Priority'] = priority
+    df_exploded['Assigned Tester'] = ''
     
     # Group by "TEST SCRIPT NUMBER" and assign "NO." starting from 0 for each group
     df_exploded['NO.'] = df_exploded.groupby('TEST SCRIPT NUMBER').ngroup()
