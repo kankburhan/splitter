@@ -162,7 +162,7 @@ def render_splitter():
             "Branch Transaction", 
             "Financing Retail", 
             "Financing Corporate", 
-            "Financing-After DIsbursement",
+            "Financing-After Disbursement",
             "Micro", 
             "Gadai", 
             "Head Office Transaction", 
