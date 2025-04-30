@@ -2,6 +2,7 @@ import streamlit as st
 from modules.homepage import render_home_page
 from modules.splitter import render_splitter
 from modules.verifier import render_verifier
+from modules.convert import render_convert
 
 def set_page_config():
     """Set the Streamlit page configuration."""
@@ -19,7 +20,7 @@ def set_page_config():
 def main():
     try:
         set_page_config()
-        menu = ["Home", "Splitter", "Verifier"]
+        menu = ["Home", "Splitter", "Verifier", "Converter"]
         choice = st.sidebar.selectbox("Main Menu", menu)
     
         if choice == "Home":
@@ -28,6 +29,8 @@ def main():
             render_splitter()
         elif choice == "Verifier":
             render_verifier()
+        elif choice == "Converter":
+            render_convert()
     except Exception:
         print("temporary down")
 
