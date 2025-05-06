@@ -117,6 +117,7 @@ def render_convert():
             "Financing Retail", 
             "Financing Corporate", 
             "Financing-After Disbursement",
+            "Financing - Micro",
             "Micro", 
             "Gadai", 
             "Head Office Transaction", 
