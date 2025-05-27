@@ -67,13 +67,22 @@ def funding_transform(df, epic_link='', feature='', squad='', priority='High'):
         exec_seq.extend([''] * (max_len - len(exec_seq)))
         exp_res.extend([''] * (max_len - len(exp_res)))
         return pd.DataFrame({'Execution_Sequence': exec_seq, 'Expected_Result': exp_res})
-    
+
     exploded_dfs = []
+    error_rows = []  # To store rows causing errors
+
     for _, row in df.iterrows():
-        aligned_df = align_lists(row)
-        aligned_df = aligned_df.assign(**{col: row[col] for col in df.columns if col not in ['Execution_Sequence', 'Expected_Result']})
-        exploded_dfs.append(aligned_df)
-    
+        try:
+            aligned_df = align_lists(row)
+            aligned_df = aligned_df.assign(**{col: row[col] for col in df.columns if col not in ['Execution_Sequence', 'Expected_Result']})
+            exploded_dfs.append(aligned_df)
+        except ValueError as e:
+            # Log the error and store the problematic TEST SCRIPT NUMBER
+            error_rows.append(row.get('TEST SCRIPT NUMBER', 'Unknown'))
+
+    if error_rows:
+        st.warning(f"Skipped rows due to errors. Problematic TEST SCRIPT NUMBERS: {', '.join(map(str, error_rows))}")
+
     df_exploded = pd.concat(exploded_dfs, ignore_index=True)
     
     # Add additional columns directly
