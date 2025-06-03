@@ -59,26 +59,71 @@ def funding_transform(df, epic_link='', feature='', squad='', priority='High'):
     ]
     df = df[[col for col in columns_to_keep if col in df.columns]]  # Keep only available columns
     
-    # Align lists using vectorized operations
     def align_lists(row):
-        exec_seq = re.split(r'\n(?=\d+\.\s*)', row['Execution_Sequence']) if isinstance(row['Execution_Sequence'], str) else []
-        exp_res = re.split(r'\n(?=\d+\.\s*)', row['Expected_Result']) if isinstance(row['Expected_Result'], str) else []
-        max_len = max(len(exec_seq), len(exp_res))
-        exec_seq.extend([''] * (max_len - len(exec_seq)))
-        exp_res.extend([''] * (max_len - len(exp_res)))
-        return pd.DataFrame({'Execution_Sequence': exec_seq, 'Expected_Result': exp_res})
+        exec_seq_str = row.get('Execution_Sequence')
+        exp_res_str = row.get('Expected_Result')
+
+        # Initial split after potentially removing leading newlines from the entire string
+        # This helps with scenarios PAR.RITEL.01.287 and PAR.RITEL.01.288 where data might start with newlines
+        
+        current_exec_seq = []
+        if isinstance(exec_seq_str, str):
+            # Remove leading newlines from the whole string before splitting
+            cleaned_exec_str = exec_seq_str.lstrip('\n')
+            # Split and then strip each item, filtering out empty strings
+            current_exec_seq = [item.strip() for item in re.split(r'\n(?=\d+\.\s*)', cleaned_exec_str) if item.strip()]
+        
+        current_exp_res = []
+        if isinstance(exp_res_str, str):
+            # Remove leading newlines from the whole string before splitting
+            cleaned_exp_str = exp_res_str.lstrip('\n')
+            # Split and then strip each item, filtering out empty strings
+            current_exp_res = [item.strip() for item in re.split(r'\n(?=\d+\.\s*)', cleaned_exp_str) if item.strip()]
+
+        # Determine the maximum length for alignment
+        max_len = max(len(current_exec_seq), len(current_exp_res))
+
+        # Pad 'Execution_Sequence' with empty strings if it's shorter
+        if len(current_exec_seq) < max_len:
+            current_exec_seq.extend([''] * (max_len - len(current_exec_seq)))
+        
+        # Pad 'Expected_Result'
+        # If 'Expected_Result' is shorter than 'Execution_Sequence' (or max_len derived from it),
+        # fill the missing rows with "-" (Requirement 1 for PAR.RITEL.01.285)
+        if len(current_exp_res) < max_len:
+            current_exp_res.extend(['-'] * (max_len - len(current_exp_res)))
+        
+        # If, after potential padding, one list is still shorter (e.g. exec_seq was empty, exp_res had items)
+        # ensure they are of equal length for DataFrame creation.
+        # This case should ideally be covered by the max_len logic, but as a safeguard:
+        if len(current_exec_seq) > len(current_exp_res):
+            current_exp_res.extend(['-'] * (len(current_exec_seq) - len(current_exp_res)))
+        elif len(current_exp_res) > len(current_exec_seq):
+            current_exec_seq.extend([''] * (len(current_exp_res) - len(current_exec_seq)))
+
+        return pd.DataFrame({'Execution_Sequence': current_exec_seq, 'Expected_Result': current_exp_res})
+
+    # The following part of your code (loop, error handling, concat) remains structurally similar
+    # but uses the updated align_lists function.
 
     exploded_dfs = []
     error_rows = []  # To store rows causing errors
 
-    for _, row in df.iterrows():
+    # Assuming 'df' is your DataFrame before this processing step
+    for _, row in df.iterrows(): # Make sure 'df' is defined and populated before this loop
         try:
             aligned_df = align_lists(row)
-            aligned_df = aligned_df.assign(**{col: row[col] for col in df.columns if col not in ['Execution_Sequence', 'Expected_Result']})
+            # Assign other row values to the new exploded DataFrame
+            # This ensures all original columns (except the ones being exploded) are carried over
+            for col in df.columns:
+                if col not in ['Execution_Sequence', 'Expected_Result']:
+                    aligned_df[col] = row[col]
             exploded_dfs.append(aligned_df)
         except ValueError as e:
             # Log the error and store the problematic TEST SCRIPT NUMBER
             error_rows.append(row.get('TEST SCRIPT NUMBER', 'Unknown'))
+        except Exception as e: # Catch other potential errors during alignment or assignment
+            error_rows.append(f"{row.get('TEST SCRIPT NUMBER', 'Unknown')} (General Error: {str(e)})")
 
     if error_rows:
         st.warning(f"Skipped rows due to errors. Problematic TEST SCRIPT NUMBERS: {', '.join(map(str, error_rows))}")
