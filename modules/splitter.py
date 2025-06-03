@@ -113,14 +113,11 @@ def funding_transform(df, epic_link='', feature='', squad='', priority='High'):
     for _, row in df.iterrows(): # Make sure 'df' is defined and populated before this loop
         try:
             aligned_df = align_lists(row)
-            # Assign other row values to the new exploded DataFrame
-            # This ensures all original columns (except the ones being exploded) are carried over
             for col in df.columns:
                 if col not in ['Execution_Sequence', 'Expected_Result']:
                     aligned_df[col] = row[col]
             exploded_dfs.append(aligned_df)
         except ValueError as e:
-            # Log the error and store the problematic TEST SCRIPT NUMBER
             error_rows.append(row.get('TEST SCRIPT NUMBER', 'Unknown'))
         except Exception as e: # Catch other potential errors during alignment or assignment
             error_rows.append(f"{row.get('TEST SCRIPT NUMBER', 'Unknown')} (General Error: {str(e)})")
